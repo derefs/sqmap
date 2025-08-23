@@ -1,11 +1,11 @@
 {
   "name": "sqmap",
   "version": "0.3.1",
-  "description": "A lightweight and easy to use micro ORM for Node/TypeScript.",
+  "description": "A lightweight and easy to use micro ORM for TypeScript.",
   "author": "Derefs Software SRL",
   "license": "MIT",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.js",
+  "main": "./dist/sqmap.js",
+  "types": "./dist/sqmap.d.ts",
   "type": "module",
   "files": [
     "dist/",
@@ -13,23 +13,24 @@
   ],
   "scripts": {
     "build": "rm -rf ./dist && tsc -p . && rm -rf ./dist/tests",
-    "test": "node --experimental-specifier-resolution=node --loader ts-node/esm ./src/tests/index.ts",
+    "test": "node --experimental-specifier-resolution=node --loader ts-node/esm ./tests/index.ts",
     "publish": "npm run build && npm publish"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/derefs/node-sqmap.git"
+    "url": "git://github.com/derefs/sqmap.git"
   },
   "bugs": {
-    "url": "https://github.com/derefs/node-sqmap/issues"
+    "url": "https://github.com/derefs/sqmap/issues"
   },
-  "homepage": "https://github.com/derefs/node-sqmap",
+  "homepage": "https://github.com/derefs/sqmap",
   "keywords": [
     "sql",
     "orm",
     "postgres"
   ],
   "devDependencies": {
+    "@types/bun": "^1.2.20",
     "@types/pg": "^8.6.6",
     "pg": "^8.10.0",
     "ts-node": "^10.9.1"

@@ -1,9 +1,81 @@
-import {
-  CompOp, BetweenOp, BetweenExtOp, InOp, LikeOp,
-  InsertQueryParams, SelectQueryParams, UpdateQueryParams, DeleteQueryParams,
-  Format
-} from "./index.js";
+// Main types
+export type CompOp = "=" | "<" | ">" | ">=" | "<=" | "!=";
+export type BetweenOp = "AND" | "OR";
+export type BetweenExtOp = "AND" | "OR" | "NOT";
+export type InOp = "IN" | "NOT IN";
+export type LikeOp = "LIKE" | "NOT LIKE" | "ILIKE" | "NOT ILIKE";
+export type OrderType = "ASC" | "DESC";
+export type ExtractColsFromRow<T> = {
+  [P in keyof T]: P
+}[keyof T];
 
+export interface Format {
+  params: {
+    prefix: "$" | "?";
+    index:  "from-0" | "from-1" | "named" | false;
+  };
+  quotingChar: `"` | "`";
+}
+
+type Formats = "POSTGRES_PG" | "SQLITE_BUN";
+export const FORMATS: Record<Formats, Format> = {
+  POSTGRES_PG: {
+    params: { prefix: "$", index: "from-1" },
+    quotingChar: `"`
+  },
+  SQLITE_BUN: {
+    params: { prefix: "?", index: "from-1" },
+    quotingChar: `"`
+  }
+};
+
+export interface SQLData {
+  query:  string;
+  params: any[];
+}
+
+export interface InsertQueryParams<TCol, TRow> {
+  cols:    TCol[];
+  rows:    TRow[];
+  return?: TCol[] | "*";
+  schema?: string | null;
+}
+
+export interface SelectQueryParams<TCol, TRow> {
+  cols:     Array<TCol | "*">;
+  where?:   [target: TRow, op?: CompOp, between?: BetweenOp] |
+            Array<[col: TCol, op: CompOp, value: any] | BetweenExtOp>;
+  in?:      Array<[col: TCol, op: InOp, value: number[] | string[]] | BetweenExtOp>;
+  like?:    Array<[col: TCol, op: LikeOp, value: string] | BetweenExtOp>;
+  between?: BetweenOp;
+  order?:   { by: TCol, type: OrderType };
+  shift?:   { limit: number | null, offset: number | null };
+  schema?: string | null;
+}
+
+export interface UpdateQueryParams<TCol, TRow> {
+  set:      TRow;
+  where?:   [target: TRow, op?: CompOp, between?: BetweenOp] |
+            Array<[col: TCol, op: CompOp, value: any] | BetweenExtOp>;
+  in?:      Array<[col: TCol, op: InOp, value: number[] | string[]] | BetweenExtOp>;
+  like?:    Array<[col: TCol, op: LikeOp, value: string] | BetweenExtOp>;
+  between?: BetweenOp;
+  return?:  TCol[] | "*";
+  schema?: string | null;
+}
+
+export interface DeleteQueryParams<TCol, TRow> {
+  where?:   [target: TRow, op?: CompOp, between?: BetweenOp] |
+            Array<[col: TCol, op: CompOp, value: any] | BetweenExtOp>;
+  in?:      Array<[col: TCol, op: InOp, value: number[] | string[]] | BetweenExtOp>;
+  like?:    Array<[col: TCol, op: LikeOp, value: string] | BetweenExtOp>;
+  between?: BetweenOp;
+  return?: TCol[] | "*";
+  schema?: string | null;
+}
+// End main types
+
+// Query Parser
 export interface ParsedInsertQuery {
   columns:   string;
   values:    string;
@@ -353,3 +425,140 @@ export function parseDeleteQuery<TCol, TRow>(query: DeleteQueryParams<TCol, TRow
 
   return { whereClause, inOp, likeOp, returning, params };
 }
+// End query parser
+// SQL code gen
+export interface DefaultValues {
+  schema?: string;
+  format?: Format;
+}
+
+export interface SQMAPI<TCol, TRow> {
+  insert: (query: InsertQueryParams<TCol, TRow>) => SQLData;
+  select: (query: SelectQueryParams<TCol, TRow>) => SQLData;
+  update: (query: UpdateQueryParams<TCol, TRow>) => SQLData;
+  delete: (query: DeleteQueryParams<TCol, TRow>) => SQLData;
+}
+
+export const buildInsertQuery = (schema: string | null, tableName: string, parsedQuery: ParsedInsertQuery): string => {
+  let finalQuery = `INSERT INTO "${schema}"."${tableName}" `;
+  if (!schema) finalQuery = `INSERT INTO "${tableName}" `;
+  finalQuery += `${parsedQuery.columns} VALUES ${parsedQuery.values}`;
+  if (parsedQuery.returning !== null) finalQuery += ` RETURNING ${parsedQuery.returning};`;
+  else finalQuery += ";";
+  return finalQuery;
+};
+
+export const buildSelectQuery = (schema: string | null, tableName: string, parsedQuery: ParsedSelectQuery, between?: BetweenOp): string => {
+  let finalQuery = `SELECT ${parsedQuery.columns} FROM "${schema}"."${tableName}"`;
+  between = between || "AND";
+  let containsWhere = false;
+  if (parsedQuery.whereClause) {
+    containsWhere = true;
+    finalQuery += ` WHERE ${parsedQuery.whereClause}`;
+  }
+  if (parsedQuery.inOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.inOp}`;
+  }
+  if (parsedQuery.likeOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.likeOp}`;
+  }
+  if (parsedQuery.order !== null) finalQuery += ` ${parsedQuery.order}`;
+  if (parsedQuery.shift !== null) finalQuery += ` ${parsedQuery.shift}`;
+  finalQuery += ";";
+  return finalQuery;
+};
+
+export const buildUpdateQuery = (schema: string | null, tableName: string, parsedQuery: ParsedUpdateQuery, between?: BetweenOp): string => {
+  let finalQuery = `UPDATE "${schema}"."${tableName}" SET ${parsedQuery.colValPairs}`;
+  between = between || "AND";
+  let containsWhere = false;
+  if (parsedQuery.whereClause) {
+    containsWhere = true;
+    finalQuery += ` WHERE ${parsedQuery.whereClause}`;
+  }
+  if (parsedQuery.inOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.inOp}`;
+  }
+  if (parsedQuery.likeOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.likeOp}`;
+  }
+  if (parsedQuery.returning !== null) finalQuery += ` RETURNING ${parsedQuery.returning};`;
+  finalQuery += ";";
+  return finalQuery;
+};
+
+export const buildDeleteQuery = (schema: string | null, tableName: string, parsedQuery: ParsedDeleteQuery, between?: BetweenOp): string => {
+  let finalQuery = `DELETE FROM "${schema}"."${tableName}"`;
+  between = between || "AND";
+  let containsWhere = false;
+  if (parsedQuery.whereClause) {
+    containsWhere = true;
+    finalQuery += ` WHERE ${parsedQuery.whereClause}`;
+  }
+  if (parsedQuery.inOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.inOp}`;
+  }
+  if (parsedQuery.likeOp) {
+    if (!containsWhere) {
+      finalQuery += " WHERE";
+      containsWhere = true;
+    } else finalQuery += ` ${between}`;
+    finalQuery += ` ${parsedQuery.likeOp}`;
+  }
+  if (parsedQuery.returning !== null) finalQuery += ` RETURNING ${parsedQuery.returning};`;
+  finalQuery += ";";
+  return finalQuery;
+};
+
+export function genAPI<TRow>(tableName: string, defaultValues?: DefaultValues): SQMAPI<ExtractColsFromRow<TRow>, TRow> {
+  const DEFAULT_SCHEMA = (defaultValues && defaultValues.schema) ?? null;
+  const DEFAULT_FORMAT: Format = (defaultValues && defaultValues.format) || FORMATS.POSTGRES_PG;
+
+  return {
+    insert: (query: InsertQueryParams<ExtractColsFromRow<TRow>, TRow>): SQLData => {
+      const schema = query.schema || DEFAULT_SCHEMA;
+      const parsedQuery = parseInsertQuery<ExtractColsFromRow<TRow>, TRow>(query, DEFAULT_FORMAT);
+      const finalQuery = buildInsertQuery(schema, tableName, parsedQuery);
+      return { query: finalQuery, params: parsedQuery.params };
+    },
+    select: (query: SelectQueryParams<ExtractColsFromRow<TRow>, TRow>): SQLData => {
+      const schema = query.schema || DEFAULT_SCHEMA;
+      const parsedQuery = parseSelectQuery<ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
+      let finalQuery = buildSelectQuery(schema, tableName, parsedQuery, query.between);
+      return { query: finalQuery, params: parsedQuery.params };
+    },
+    update: (query: UpdateQueryParams<ExtractColsFromRow<TRow>, TRow>): SQLData => {
+      const schema = query.schema || DEFAULT_SCHEMA;
+      const parsedQuery = parseUpdateQuery<ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
+      let finalQuery = buildUpdateQuery(schema, tableName, parsedQuery, query.between);
+      return { query: finalQuery, params: parsedQuery.params };
+    },
+    delete: (query: DeleteQueryParams<ExtractColsFromRow<TRow>, TRow>): SQLData => {
+      const schema = query.schema || DEFAULT_SCHEMA;
+      const parsedQuery = parseDeleteQuery<ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
+      let finalQuery = buildDeleteQuery(schema, tableName, parsedQuery, query.between);
+      return { query: finalQuery, params: parsedQuery.params };
+    },
+  };
+}
+// End SQL code gen
