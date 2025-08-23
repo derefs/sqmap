@@ -82,23 +82,18 @@ export interface DeleteQueryParams<TCol, TRow> {
 // End main types
 
 // Query Parser
-export interface ParsedInsertQuery {
+interface ParsedInsertQuery {
   columns:   string;
   values:    string;
   returning: string | null;
   params:    any[];
 }
 
-const escapeName = (quotingChar: QuotingChar, name: string): string => {
-  return `${quotingChar}${name}${quotingChar}`;
-};
-
-const escapeParam = (prefix: ParamsPrefix, index: number, append: boolean): string => {
-  if (append) return `${prefix}${index}`;
-  return prefix;
-};
-
 export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow>, format: Format): ParsedInsertQuery {
+  const qc = format.quotingChar;
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let columns:   string = "(";
   let values:    string = "(";
   let returning: string | null = null;
@@ -109,7 +104,7 @@ export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow
   if (colsCount === 0) throw new Error("No columns provided for the insert statement!");
   if (rowsCount === 0) throw new Error("No rows provided for the insert statement!");
 
-  for (let i = 0; i < colsCount; i++) columns += `${escapeName(format.quotingChar, query.cols[i] as string)}, `;
+  for (let i = 0; i < colsCount; i++) columns += `${qc}${query.cols[i]}${qc}, `;
   columns = columns.slice(0, -2);
   columns += ")";
 
@@ -118,7 +113,7 @@ export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow
     const row = query.rows[i];
     for (let j = 0; j < colsCount; j++) {
       const col = query.cols[j];
-      values += `${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}, `
+      values += pai ? `${pp}${paramIndex}, ` : `${pp}, `;
       paramIndex++;
       params.push((row as any)[col]);
     }
@@ -131,7 +126,7 @@ export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow
   else if (query.return !== undefined) {
     let returnColumns = "";
     for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${escapeName(format.quotingChar, query.return[i] as string)}, `;
+      returnColumns += `${qc}${query.return[i]}${qc}, `;
     }
     returnColumns = returnColumns.slice(0, -2);
     returning = returnColumns;
@@ -146,6 +141,10 @@ function resolveWhereClause<TCol, TRow>(
          Array<[col: TCol, op: CompOp, value: any] | BetweenExtOp>,
   paramIndex: number, params: any[], format: Format
 ): WhereClauseResult {
+  const qc = format.quotingChar;
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let whereClause: string | null = null;
   if (typeof WHERE[0] === "object" && !Array.isArray(WHERE[0])) {
     whereClause = "";
@@ -154,7 +153,7 @@ function resolveWhereClause<TCol, TRow>(
     const between = WHERE[2] || "AND";
     whereClause = "";
     for (const [key, value] of Object.entries(target as any)) {
-      whereClause += `${escapeName(format.quotingChar, key)}${op}${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)} ${between} `
+      whereClause += pai ? `${qc}${key}${qc}${op}${pp}${paramIndex} ${between} ` : `${qc}${key}${qc}${op}${pp} ${between} `;
       paramIndex++;
       params.push(value);
     }
@@ -166,7 +165,7 @@ function resolveWhereClause<TCol, TRow>(
       if (Array.isArray(token)) {
         const col = token[0];
         const op = token[1];
-        whereClause += ` ${escapeName(format.quotingChar, col as string)}${op}${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}`
+        whereClause += pai ? ` ${qc}${col}${qc}${op}${pp}${paramIndex}` : ` ${qc}${col}${qc}${op}${pp}`;
         paramIndex++;
         params.push(token[2]);
       } else {
@@ -183,6 +182,10 @@ function resolveInOperator<TCol, TRow>(
   IN: Array<[col: TCol, op: InOp, value: number[] | string[]] | BetweenExtOp>,
   paramIndex: number, params: any[], format: Format
 ): InOpResult {
+  const qc = format.quotingChar;
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let inOp: string | null = "";
   for (let i = 0; i < IN.length; i++) {
     const token = IN[i];
@@ -190,10 +193,10 @@ function resolveInOperator<TCol, TRow>(
       const col = token[0];
       const op = token[1];
       const values = token[2];
-      inOp += `${escapeName(format.quotingChar, col as string)} ${op} (`;
+      inOp += `${qc}${col}${qc} ${op} (`;
       for (let j = 0; j < values.length; j++) {
         const value = values[j];
-        inOp += `${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}, `
+        inOp += pai ? `${pp}${paramIndex}, ` : `${pp}, `;
         paramIndex++;
         params.push(value);
       }
@@ -212,13 +215,17 @@ function resolveLikeOperator<TCol, TRow>(
   LIKE: Array<[col: TCol, op: LikeOp, value: string] | BetweenExtOp>,
   paramIndex: number, params: any[], format: Format
 ): LikeOpResult {
+  const qc = format.quotingChar;
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let likeOp: string | null = "";
   for (let i = 0; i < LIKE.length; i++) {
     const token = LIKE[i];
     if (Array.isArray(token)) {
       const col = token[0];
       const op = token[1];
-      likeOp += `${escapeName(format.quotingChar, col as string)} ${op} ${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)} `
+      likeOp += pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex} ` : `${qc}${col}${qc} ${op} ${pp} `;
       paramIndex++;
       params.push(token[2]);
     } else {
@@ -234,23 +241,26 @@ function resolveShift<TCol, TRow>(
   SHIFT: { limit: number | null, offset: number | null },
   paramIndex: number, params: any[], format: Format
 ): ShiftResult {
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let shift: string | null = "";
   let char = "";
   if (SHIFT.limit !== null && SHIFT.limit >= 0) {
-    shift += `LIMIT ${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}`;
+    shift += pai ? `LIMIT ${pp}${paramIndex}` : `LIMIT ${pp}`;
     paramIndex++;
     params.push(SHIFT.limit);
     char = " ";
   }
   if (SHIFT.offset !== null && SHIFT.offset >= 0) {
-    shift += `${char}OFFSET ${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}`;
+    shift += pai ? `${char}OFFSET ${pp}${paramIndex}` : `${char}OFFSET ${pp}`;
     params.push(SHIFT.offset);
     paramIndex++;
   }
   return { shift, paramIndex };
 }
 
-export interface ParsedSelectQuery {
+interface ParsedSelectQuery {
   columns:     string;
   whereClause: string | null;
   inOp:        string | null;
@@ -260,6 +270,8 @@ export interface ParsedSelectQuery {
   params:      any[];
 }
 export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow>, format: Format): ParsedSelectQuery {
+  const qc = format.quotingChar;
+
   let columns:     string = "";
   let whereClause: string | null = null;
   let inOp:        string | null = null;
@@ -273,7 +285,7 @@ export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow
 
   for (let i = 0; i < colsCount; i++) {
     const col = query.cols[i];
-    if (col !== "*") columns += `${escapeName(format.quotingChar, col as string)}, `;
+    if (col !== "*") columns += `${qc}${col}${qc}, `;
     else columns += "*, ";
   }
   columns = columns.slice(0, -2);
@@ -294,7 +306,7 @@ export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow
     likeOp     = likeOpResult.likeOp;
     paramIndex = likeOpResult.paramIndex;
   }
-  if (query.order) order = `ORDER BY ${escapeName(format.quotingChar, query.order.by as string)} ${query.order.type}`;
+  if (query.order) order = `ORDER BY ${qc}${query.order.by}${qc} ${query.order.type}`;
   if (query.shift) {
     const shiftResult = resolveShift<TCol, TRow>(query.shift, paramIndex, params, format);
     shift      = shiftResult.shift;
@@ -304,7 +316,7 @@ export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow
   return { columns, whereClause, inOp, likeOp, order, shift, params };
 }
 
-export interface ParsedUpdateQuery {
+interface ParsedUpdateQuery {
   colValPairs: string;
   whereClause: string | null;
   inOp:        string | null;
@@ -313,6 +325,10 @@ export interface ParsedUpdateQuery {
   params:      any[];
 }
 export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow>, format: Format): ParsedUpdateQuery {
+  const qc = format.quotingChar;
+  const pai = format.paramsAppendIndex;
+  const pp = format.paramsPrefix;
+
   let colValPairs: string = "";
   let whereClause: string | null = null;
   let inOp:        string | null = null;
@@ -325,7 +341,7 @@ export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow
 
   let paramIndex = format.paramsStartIndex;
   for (const [key, value] of Object.entries(query.set as any)) {
-    colValPairs += `${escapeName(format.quotingChar, key)}=${escapeParam(format.paramsPrefix, paramIndex, format.paramsAppendIndex)}, `;
+    colValPairs += pai ? `${qc}${key}${qc}=${pp}${paramIndex}, ` : `${qc}${key}${qc}=${pp}, `;
     paramIndex++;
     params.push(value);
   }
@@ -351,7 +367,7 @@ export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow
   else if (query.return !== undefined) {
     let returnColumns = "";
     for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${escapeName(format.quotingChar, query.return[i] as string)}, `;
+      returnColumns += `${qc}${query.return[i]}${qc}, `;
     }
     returnColumns = returnColumns.slice(0, -2);
     returning = returnColumns;
@@ -360,7 +376,7 @@ export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow
   return { colValPairs, whereClause, inOp, likeOp, returning, params };
 }
 
-export interface ParsedDeleteQuery {
+interface ParsedDeleteQuery {
   whereClause: string | null;
   inOp:        string | null;
   likeOp:      string | null;
@@ -368,6 +384,8 @@ export interface ParsedDeleteQuery {
   params:      any[];
 }
 export function parseDeleteQuery<TCol, TRow>(query: DeleteQueryParams<TCol, TRow>, format: Format): ParsedDeleteQuery {
+  const qc = format.quotingChar;
+
   let whereClause: string | null = null;
   let inOp:        string | null = null;
   let likeOp:      string | null = null;
@@ -397,7 +415,7 @@ export function parseDeleteQuery<TCol, TRow>(query: DeleteQueryParams<TCol, TRow
   else if (query.return !== undefined) {
     let returnColumns = "";
     for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${escapeName(format.quotingChar, query.return[i] as string)}, `;
+      returnColumns += `${qc}${query.return[i]}${qc}, `;
     }
     returnColumns = returnColumns.slice(0, -2);
     returning = returnColumns;
@@ -406,6 +424,7 @@ export function parseDeleteQuery<TCol, TRow>(query: DeleteQueryParams<TCol, TRow
   return { whereClause, inOp, likeOp, returning, params };
 }
 // End query parser
+
 // SQL code gen
 export interface SQMAPI<TCol, TRow> {
   insert: (query: InsertQueryParams<TCol, TRow>) => SQLData;
