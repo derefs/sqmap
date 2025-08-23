@@ -9,28 +9,26 @@ export interface SQMSQLiteBunAPI<TCol, TRow> {
   sql:    (db: Database, query: string, params: any[])             => Array<TRow | any>;
 }
 
-export function genSQLiteBunAPI<TRow>(tableName: string, defaultValues?: SQM.DefaultValues): SQMSQLiteBunAPI<SQM.ExtractColsFromRow<TRow>, TRow> {
-  const DEFAULT_FORMAT: SQM.Format = (defaultValues && defaultValues.format) || SQM.FORMATS.SQLITE_BUN;
-
+export function genSQLiteBunAPI<TRow>(tableName: string, format: SQM.Format): SQMSQLiteBunAPI<SQM.ExtractColsFromRow<TRow>, TRow> {
   return {
     insert: (db: Database, query: SQM.InsertQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Array<TRow> => {
-      const parsedQuery = SQM.parseInsertQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, DEFAULT_FORMAT);
-      let finalQuery = SQM.buildInsertQuery(null, tableName, parsedQuery);
+      const parsedQuery = SQM.parseInsertQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
+      let finalQuery = SQM.buildInsertQuery(null, tableName, parsedQuery, format.quotingChar);
       return db.query(finalQuery).all(...parsedQuery.params) as TRow[];
     },
     select: (db: Database, query: SQM.SelectQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Array<TRow> => {
-      const parsedQuery = SQM.parseSelectQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
-      let finalQuery = SQM.buildSelectQuery(null, tableName, parsedQuery, query.between);
+      const parsedQuery = SQM.parseSelectQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
+      let finalQuery = SQM.buildSelectQuery(null, tableName, parsedQuery, format.quotingChar, query.between);
       return db.query(finalQuery).all(...parsedQuery.params) as TRow[];
     },
     update: (db: Database, query: SQM.UpdateQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Array<TRow> => {
-      const parsedQuery = SQM.parseUpdateQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
-      let finalQuery = SQM.buildUpdateQuery(null, tableName, parsedQuery, query.between);
+      const parsedQuery = SQM.parseUpdateQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
+      let finalQuery = SQM.buildUpdateQuery(null, tableName, parsedQuery, format.quotingChar, query.between);
       return db.query(finalQuery).all(...parsedQuery.params) as TRow[];
     },
     delete: (db: Database, query: SQM.DeleteQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Array<TRow> => {
-      const parsedQuery = SQM.parseDeleteQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, { prefix: "$", appendIndex: true });
-      let finalQuery = SQM.buildDeleteQuery(null, tableName, parsedQuery, query.between);
+      const parsedQuery = SQM.parseDeleteQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
+      let finalQuery = SQM.buildDeleteQuery(null, tableName, parsedQuery, format.quotingChar, query.between);
       return db.query(finalQuery).all(...parsedQuery.params) as TRow[];
     },
     sql: (db: Database, query: string, params: any[]): Array<TRow | any> => {

@@ -22,5 +22,10 @@ export enum Status {
   Deleted          = "deleted"
 }
 
-export const db = SQM.genAPI<Row>("users");
+export const db = SQM.genAPI<Row>("users", "fh", {
+  paramsPrefix: "?",
+  paramsStartIndex: 0,
+  paramsAppendIndex: true,
+  quotingChar: "`"
+});
 // export const db2 = genPostgresPGAPI<Row>("users", { schema: "pg" });
