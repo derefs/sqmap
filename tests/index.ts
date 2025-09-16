@@ -13,8 +13,8 @@ const main = () => {
 
   const select1 = PostgresUser.db.select({
     cols: ["email", "password"],
-    where: [{ email: "hello@select.com", id: 1 }],
-    in: [["status", "IN", [PostgresUser.Status.Banned, PostgresUser.Status.Deactivated]], "OR"],
+    where: [{ email: "hello@select.com", id: 1 }, "!=", "OR"],
+    in: [["status", "IN", [PostgresUser.Status.Banned, PostgresUser.Status.Deactivated]]],
     like: [["email", "ILIKE", "hello"], "AND"],
     shift: { limit: 2, offset: 10 },
     order: { by: "created", type: "DESC" }

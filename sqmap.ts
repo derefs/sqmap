@@ -153,7 +153,7 @@ function resolveWhereClause<TCol, TRow>(
     const between = WHERE[2] || "AND";
     whereClause = "";
     for (const [key, value] of Object.entries(target as any)) {
-      whereClause += pai ? `${qc}${key}${qc}${op}${pp}${paramIndex} ${between} ` : `${qc}${key}${qc}${op}${pp} ${between} `;
+      whereClause += pai ? `${qc}${key}${qc} ${op} ${pp}${paramIndex} ${between} ` : `${qc}${key}${qc} ${op} ${pp} ${between} `;
       paramIndex++;
       params.push(value);
     }
@@ -165,7 +165,7 @@ function resolveWhereClause<TCol, TRow>(
       if (Array.isArray(token)) {
         const col = token[0];
         const op = token[1];
-        whereClause += pai ? ` ${qc}${col}${qc}${op}${pp}${paramIndex}` : ` ${qc}${col}${qc}${op}${pp}`;
+        whereClause += pai ? ` ${qc}${col}${qc} ${op} ${pp}${paramIndex}` : ` ${qc}${col}${qc} ${op} ${pp}`;
         paramIndex++;
         params.push(token[2]);
       } else {
@@ -203,7 +203,7 @@ function resolveInOperator<TCol, TRow>(
       inOp = inOp.slice(0, -2);
       inOp += ") ";
     } else {
-      inOp += token;
+      if (IN.length - 1 !== i) inOp += token;
     }
   }
   inOp = inOp.slice(0, -1);
@@ -229,7 +229,7 @@ function resolveLikeOperator<TCol, TRow>(
       paramIndex++;
       params.push(token[2]);
     } else {
-      likeOp += token;
+      if (LIKE.length - 1 !== i) likeOp += token;
     }
   }
   likeOp = likeOp.slice(0, -1);
@@ -341,7 +341,7 @@ export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow
 
   let paramIndex = format.paramsStartIndex;
   for (const [key, value] of Object.entries(query.set as any)) {
-    colValPairs += pai ? `${qc}${key}${qc}=${pp}${paramIndex}, ` : `${qc}${key}${qc}=${pp}, `;
+    colValPairs += pai ? `${qc}${key}${qc} = ${pp}${paramIndex}, ` : `${qc}${key}${qc} = ${pp}, `;
     paramIndex++;
     params.push(value);
   }
@@ -495,7 +495,7 @@ export const buildUpdateQuery = (schema: string | null, tableName: string, parse
     finalQuery += ` ${parsedQuery.likeOp}`;
   }
   if (parsedQuery.returning !== null) finalQuery += ` RETURNING ${parsedQuery.returning};`;
-  finalQuery += ";";
+  else finalQuery += ";";
   return finalQuery;
 };
 
@@ -523,7 +523,7 @@ export const buildDeleteQuery = (schema: string | null, tableName: string, parse
     finalQuery += ` ${parsedQuery.likeOp}`;
   }
   if (parsedQuery.returning !== null) finalQuery += ` RETURNING ${parsedQuery.returning};`;
-  finalQuery += ";";
+  else finalQuery += ";";
   return finalQuery;
 };
 
