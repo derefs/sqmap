@@ -1,11 +1,25 @@
 {
   "name": "sqmap",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "description": "A lightweight and easy to use micro ORM for TypeScript.",
   "author": "Derefs Software SRL",
   "license": "MIT",
   "main": "./dist/sqmap.js",
   "types": "./dist/sqmap.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/sqmap.d.ts",
+      "import": "./dist/sqmap.js"
+    },
+    "./postgres-pg": {
+      "types": "./dist/apis/postgres-pg.d.ts",
+      "import": "./dist/apis/postgres-pg.js"
+    },
+    "./sqlite-bun": {
+      "types": "./dist/apis/sqlite-bun.d.ts",
+      "import": "./dist/apis/sqlite-bun.js"
+    }
+  },
   "type": "module",
   "files": [
     "dist/",

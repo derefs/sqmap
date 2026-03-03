@@ -89,6 +89,58 @@ interface ParsedInsertQuery {
   params:    any[];
 }
 
+function resolveReturning<TCol>(returnQuery: TCol[] | "*" | undefined, quotingChar: QuotingChar): string | null {
+  if (returnQuery === undefined) return null;
+  if (returnQuery === "*") return "*";
+  if (returnQuery.length === 0) return null;
+
+  let returnColumns = "";
+  for (let i = 0; i < returnQuery.length; i++) returnColumns += `${quotingChar}${returnQuery[i]}${quotingChar}, `;
+  returnColumns = returnColumns.slice(0, -2);
+  return returnColumns;
+}
+
+function resolveBooleanExpr(tokens: Array<string | BetweenExtOp>): string | null {
+  if (tokens.length === 0) return null;
+
+  const normalizedTokens: Array<string | BetweenExtOp> = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "AND" || token === "OR" || token === "NOT") {
+      if (i === tokens.length - 1) continue;
+      normalizedTokens.push(token);
+    } else normalizedTokens.push(token);
+  }
+
+  while (normalizedTokens.length > 0 && (normalizedTokens[0] === "AND" || normalizedTokens[0] === "OR")) normalizedTokens.shift();
+  while (normalizedTokens.length > 0) {
+    const token = normalizedTokens[normalizedTokens.length - 1];
+    if (token === "AND" || token === "OR" || token === "NOT") normalizedTokens.pop();
+    else break;
+  }
+
+  if (normalizedTokens.length === 0) return null;
+
+  let expectingPredicate = true;
+  for (let i = 0; i < normalizedTokens.length; i++) {
+    const token = normalizedTokens[i];
+    if (token === "AND" || token === "OR") {
+      if (expectingPredicate) throw new Error(`Invalid boolean expression near "${token}".`);
+      expectingPredicate = true;
+      continue;
+    }
+    if (token === "NOT") {
+      if (!expectingPredicate) throw new Error(`Invalid boolean expression near "${token}".`);
+      continue;
+    }
+    if (!expectingPredicate) throw new Error("Invalid boolean expression: missing logical operator between predicates.");
+    expectingPredicate = false;
+  }
+
+  if (expectingPredicate) throw new Error("Invalid boolean expression: expression cannot end with a logical operator.");
+  return normalizedTokens.join(" ");
+}
+
 export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow>, format: Format): ParsedInsertQuery {
   const qc = format.quotingChar;
   const pai = format.paramsAppendIndex;
@@ -122,15 +174,7 @@ export function parseInsertQuery<TCol, TRow>(query: InsertQueryParams<TCol, TRow
   }
   values = values.slice(0, -3);
 
-  if (query.return === "*") returning = "*";
-  else if (query.return !== undefined) {
-    let returnColumns = "";
-    for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${qc}${query.return[i]}${qc}, `;
-    }
-    returnColumns = returnColumns.slice(0, -2);
-    returning = returnColumns;
-  }
+  returning = resolveReturning(query.return, qc);
 
   return { columns, values, returning, params };
 }
@@ -147,32 +191,32 @@ function resolveWhereClause<TCol, TRow>(
 
   let whereClause: string | null = null;
   if (typeof WHERE[0] === "object" && !Array.isArray(WHERE[0])) {
-    whereClause = "";
     const target = WHERE[0];
     const op = WHERE[1] || "=";
     const between = WHERE[2] || "AND";
-    whereClause = "";
+    const predicates: string[] = [];
     for (const [key, value] of Object.entries(target as any)) {
-      whereClause += pai ? `${qc}${key}${qc} ${op} ${pp}${paramIndex} ${between} ` : `${qc}${key}${qc} ${op} ${pp} ${between} `;
+      predicates.push(pai ? `${qc}${key}${qc} ${op} ${pp}${paramIndex}` : `${qc}${key}${qc} ${op} ${pp}`);
       paramIndex++;
       params.push(value);
     }
-    whereClause = whereClause.slice(0, (between.length + 2) * -1);
+    whereClause = predicates.length === 0 ? null : predicates.join(` ${between} `);
   } else if (Array.isArray(WHERE)) {
-    whereClause = "";
+    const predicates: Array<string | BetweenExtOp> = [];
     for (let i = 0; i < WHERE.length; i++) {
       const token = WHERE[i];
       if (Array.isArray(token)) {
         const col = token[0];
         const op = token[1];
-        whereClause += pai ? ` ${qc}${col}${qc} ${op} ${pp}${paramIndex}` : ` ${qc}${col}${qc} ${op} ${pp}`;
+        predicates.push(pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex}` : `${qc}${col}${qc} ${op} ${pp}`);
         paramIndex++;
         params.push(token[2]);
       } else {
-        if (WHERE.length - 1 !== i) whereClause += token;
+        if (token !== "AND" && token !== "OR" && token !== "NOT") throw new Error(`Invalid boolean expression token "${token}".`);
+        predicates.push(token as BetweenExtOp);
       }
     }
-    whereClause = whereClause.slice(0, -1);
+    whereClause = resolveBooleanExpr(predicates);
   }
   return { whereClause, paramIndex };
 }
@@ -186,27 +230,31 @@ function resolveInOperator<TCol, TRow>(
   const pai = format.paramsAppendIndex;
   const pp = format.paramsPrefix;
 
-  let inOp: string | null = "";
+  let inOp: string | null = null;
+  const predicates: Array<string | BetweenExtOp> = [];
   for (let i = 0; i < IN.length; i++) {
     const token = IN[i];
     if (Array.isArray(token)) {
       const col = token[0];
       const op = token[1];
       const values = token[2];
-      inOp += `${qc}${col}${qc} ${op} (`;
+      if (values.length === 0) throw new Error(`IN operator requires at least one value for "${col}".`);
+      let inPredicate = `${qc}${col}${qc} ${op} (`;
       for (let j = 0; j < values.length; j++) {
         const value = values[j];
-        inOp += pai ? `${pp}${paramIndex}, ` : `${pp}, `;
+        inPredicate += pai ? `${pp}${paramIndex}, ` : `${pp}, `;
         paramIndex++;
         params.push(value);
       }
-      inOp = inOp.slice(0, -2);
-      inOp += ") ";
+      inPredicate = inPredicate.slice(0, -2);
+      inPredicate += ")";
+      predicates.push(inPredicate);
     } else {
-      if (IN.length - 1 !== i) inOp += token;
+      if (token !== "AND" && token !== "OR" && token !== "NOT") throw new Error(`Invalid boolean expression token "${token}".`);
+      predicates.push(token as BetweenExtOp);
     }
   }
-  inOp = inOp.slice(0, -1);
+  inOp = resolveBooleanExpr(predicates);
   return { inOp, paramIndex };
 }
 
@@ -219,20 +267,22 @@ function resolveLikeOperator<TCol, TRow>(
   const pai = format.paramsAppendIndex;
   const pp = format.paramsPrefix;
 
-  let likeOp: string | null = "";
+  let likeOp: string | null = null;
+  const predicates: Array<string | BetweenExtOp> = [];
   for (let i = 0; i < LIKE.length; i++) {
     const token = LIKE[i];
     if (Array.isArray(token)) {
       const col = token[0];
       const op = token[1];
-      likeOp += pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex} ` : `${qc}${col}${qc} ${op} ${pp} `;
+      predicates.push(pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex}` : `${qc}${col}${qc} ${op} ${pp}`);
       paramIndex++;
       params.push(token[2]);
     } else {
-      if (LIKE.length - 1 !== i) likeOp += token;
+      if (token !== "AND" && token !== "OR" && token !== "NOT") throw new Error(`Invalid boolean expression token "${token}".`);
+      predicates.push(token as BetweenExtOp);
     }
   }
-  likeOp = likeOp.slice(0, -1);
+  likeOp = resolveBooleanExpr(predicates);
   return { likeOp, paramIndex };
 }
 
@@ -281,7 +331,7 @@ export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow
   const params:    any[] = [];
 
   const colsCount = query.cols.length;
-  if (colsCount === 0) throw new Error("No columns provided for the insert statement!");
+  if (colsCount === 0) throw new Error("No columns provided for the select statement!");
 
   for (let i = 0; i < colsCount; i++) {
     const col = query.cols[i];
@@ -363,15 +413,9 @@ export function parseUpdateQuery<TCol, TRow>(query: UpdateQueryParams<TCol, TRow
     paramIndex = likeOpResult.paramIndex;
   }
 
-  if (query.return === "*") returning = "*";
-  else if (query.return !== undefined) {
-    let returnColumns = "";
-    for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${qc}${query.return[i]}${qc}, `;
-    }
-    returnColumns = returnColumns.slice(0, -2);
-    returning = returnColumns;
-  }
+  if (!whereClause && !inOp && !likeOp) throw new Error("Update query needs at least one non-empty condition!");
+
+  returning = resolveReturning(query.return, qc);
 
   return { colValPairs, whereClause, inOp, likeOp, returning, params };
 }
@@ -411,15 +455,9 @@ export function parseDeleteQuery<TCol, TRow>(query: DeleteQueryParams<TCol, TRow
     paramIndex = likeOpResult.paramIndex;
   }
 
-  if (query.return === "*") returning = "*";
-  else if (query.return !== undefined) {
-    let returnColumns = "";
-    for (let i = 0; i < query.return.length; i++) {
-      returnColumns += `${qc}${query.return[i]}${qc}, `;
-    }
-    returnColumns = returnColumns.slice(0, -2);
-    returning = returnColumns;
-  }
+  if (!whereClause && !inOp && !likeOp) throw new Error("Delete query needs at least one non-empty condition!");
+
+  returning = resolveReturning(query.return, qc);
 
   return { whereClause, inOp, likeOp, returning, params };
 }

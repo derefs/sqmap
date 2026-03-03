@@ -6,6 +6,13 @@ SQMap doesn't aim to replace SQL with TS, but instead it encourages you to combi
 ## Supported databases
 Currently SQMap only supports Postgres using the `pg` [package](https://www.npmjs.com/package/pg).
 
+## WARNING: trusted identifiers only
+SQMap parameterizes values, but SQL identifiers (table names, schema names, column names) are interpolated into query strings.
+
+DO NOT pass untrusted user input as identifiers.
+
+Only use identifiers that come from trusted, static application code.
+
 ## Models
 In order to fully use the features offered by SQMap you'll need to define a model for each table that you want to query. The example below shows how you can use TS to define the valid columns and the row types while also using SQL to create the table.
 ```ts

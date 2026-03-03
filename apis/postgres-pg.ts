@@ -9,30 +9,31 @@ export interface SQMPostgresPGAPI<TCol, TRow extends QueryResultRow> {
   sql:       (client: PoolClient, query: string, params: any[])         => Promise<QueryResult<TRow | any>>;
 }
 
-export function genPostgresPGAPI<TRow extends QueryResultRow>(tableName: string, schema: string | null, format: SQM.Format): SQMPostgresPGAPI<SQM.ExtractColsFromRow<TRow>, TRow> {
+export function genPostgresPGAPI<TRow extends QueryResultRow>(tableName: string, schema: string | null, format?: SQM.Format): SQMPostgresPGAPI<SQM.ExtractColsFromRow<TRow>, TRow> {
+  const finalFormat = format ?? SQM.FORMATS.POSTGRES_PG;
   return {
     insert: (client: PoolClient, query: SQM.InsertQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Promise<QueryResult<TRow>> => {
       const finalSchema = query.schema === null ? null : query.schema || schema;
-      const parsedQuery = SQM.parseInsertQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
-      let finalQuery = SQM.buildInsertQuery(finalSchema, tableName, parsedQuery, format.quotingChar);
+      const parsedQuery = SQM.parseInsertQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, finalFormat);
+      let finalQuery = SQM.buildInsertQuery(finalSchema, tableName, parsedQuery, finalFormat.quotingChar);
       return client.query(finalQuery, parsedQuery.params);
     },
     select: (client: PoolClient, query: SQM.SelectQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Promise<QueryResult<TRow>> => {
       const finalSchema = query.schema === null ? null : query.schema || schema;
-      const parsedQuery = SQM.parseSelectQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
-      let finalQuery = SQM.buildSelectQuery(finalSchema, tableName, parsedQuery, format.quotingChar, query.between);
+      const parsedQuery = SQM.parseSelectQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, finalFormat);
+      let finalQuery = SQM.buildSelectQuery(finalSchema, tableName, parsedQuery, finalFormat.quotingChar, query.between);
       return client.query(finalQuery, parsedQuery.params);
     },
     update: (client: PoolClient, query: SQM.UpdateQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Promise<QueryResult<TRow>> => {
       const finalSchema = query.schema === null ? null : query.schema || schema;
-      const parsedQuery = SQM.parseUpdateQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
-      let finalQuery = SQM.buildUpdateQuery(finalSchema, tableName, parsedQuery, format.quotingChar, query.between);
+      const parsedQuery = SQM.parseUpdateQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, finalFormat);
+      let finalQuery = SQM.buildUpdateQuery(finalSchema, tableName, parsedQuery, finalFormat.quotingChar, query.between);
       return client.query(finalQuery, parsedQuery.params);
     },
     delete: (client: PoolClient, query: SQM.DeleteQueryParams<SQM.ExtractColsFromRow<TRow>, TRow>): Promise<QueryResult<TRow>> => {
       const finalSchema = query.schema === null ? null : query.schema || schema;
-      const parsedQuery = SQM.parseDeleteQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, format);
-      let finalQuery = SQM.buildDeleteQuery(finalSchema, tableName, parsedQuery, format.quotingChar, query.between);
+      const parsedQuery = SQM.parseDeleteQuery<SQM.ExtractColsFromRow<TRow>, TRow>(query, finalFormat);
+      let finalQuery = SQM.buildDeleteQuery(finalSchema, tableName, parsedQuery, finalFormat.quotingChar, query.between);
       return client.query(finalQuery, parsedQuery.params);
     },
     sql: (client: PoolClient, query: string, params: any[]): Promise<QueryResult<TRow | any>> => {
