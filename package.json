@@ -1,6 +1,6 @@
 {
   "name": "sqmap",
-  "version": "0.4.5",
+  "version": "1.0.0",
   "description": "A lightweight and easy to use micro ORM for TypeScript.",
   "author": "Derefs Software SRL",
   "license": "MIT",

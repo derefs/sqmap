@@ -39,6 +39,10 @@ export interface UserRow {
 export const users = SQM.genAPI<UserRow>("users", "app", SQM.FORMATS.POSTGRES_PG);
 ```
 
+Built-in formats:
+- `SQM.FORMATS.POSTGRES_PG`
+- `SQM.FORMATS.SQLITE_BUN`
+
 `genAPI` returns SQL only:
 
 ```ts
@@ -80,6 +84,8 @@ Notes:
 - Missing values in selected `cols` become `undefined`.
 - Multi-row insert is supported.
 - `return: "*"` and `return: ["colA", "colB"]` are supported.
+- `return: []` omits `RETURNING`.
+- `cols` and `rows` must both be non-empty.
 
 ## Select queries
 ```ts
@@ -108,18 +114,20 @@ Capabilities:
 - `cols` supports explicit columns and `"*"`.
 - `distinct`: emits `SELECT DISTINCT ...` when enabled.
 - `where` supports:
+  - Comparison operators: `=`, `<`, `>`, `>=`, `<=`, `!=`
   - Object form: `[{ id: 1, email: "x@x.com" }, "!=", "OR"]`
+  - Object defaults: operator `=` and predicate join `AND` when omitted
   - Object null rewrite: `[{ verified_at: null, id: 7 }]` becomes `"verified_at" IS NULL AND "id" = $1`
   - Tokenized form: `[["id", "=", 1], "OR", "NOT", ["email", "=", "x@x.com"]]`
   - Tokenized null rewrite: `[["verified_at", "=", null], "OR", ["stripe_id", "!=", null]]` becomes `IS NULL` / `IS NOT NULL`
 - `in`: `IN` and `NOT IN`
 - `like`: `LIKE`, `NOT LIKE`, `ILIKE`, `NOT ILIKE`
-- `between`: controls how `where`, `in`, and `like` groups are joined (`AND` default, or `OR`)
+- `between`: controls how `where`, `in`, and `like` groups are joined (`AND` default, or `OR`). It does not change tokenized logic inside each group.
 - `order`: `ASC` or `DESC`
-- `shift`: `LIMIT` / `OFFSET` (`null` and negative values are ignored)
+- `shift`: `LIMIT` / `OFFSET` (`null` and negative values are ignored, limit-only and offset-only are both supported)
 
 Note:
-- Null rewrite applies to both object and tokenized `where` predicates for `=` and `!=`.
+- Null rewrite applies to both object and tokenized `where` predicates for `=` and `!=` only.
 
 ## Update queries
 ```ts
@@ -145,8 +153,11 @@ UPDATE "app"."users" SET "status" = $1 WHERE "id" = $2 OR "status" IN ($3, $4) O
 
 Rules:
 - `set` must be non-empty.
-- At least one non-empty filter group is required (`where`, `in`, or `like`).
+- At least one filter key is required (`where`, `in`, or `like`).
+- At least one non-empty filter group is required after parsing (`where`, `in`, or `like`).
 - `return` works like insert.
+- `return: []` omits `RETURNING`.
+- Using only empty/token-only filter arrays throws.
 
 ## Delete queries
 ```ts
@@ -169,8 +180,11 @@ DELETE FROM "app"."users" WHERE "id" = $1 AND "status" IN ($2) AND "email" LIKE 
 ```
 
 Rules:
-- At least one non-empty filter group is required (`where`, `in`, or `like`).
+- At least one filter key is required (`where`, `in`, or `like`).
+- At least one non-empty filter group is required after parsing (`where`, `in`, or `like`).
 - `return` supports `"*"` or selected columns.
+- `return: []` omits `RETURNING`.
+- Using only empty/token-only filter arrays throws.
 
 ## Schema behavior
 Each query supports `schema?: string | null`:
@@ -188,7 +202,7 @@ For tokenized `where` / `in` / `like` arrays:
 
 Behavior differences:
 - `select` tolerates token-only/empty filter arrays by emitting no `WHERE`.
-- `update` and `delete` reject token-only/empty filters (safety guard).
+- `update` and `delete` reject token-only/empty filters when they resolve to no predicates (safety guard).
 
 ## Adapters
 ### PostgreSQL (`pg`)
@@ -202,7 +216,7 @@ interface UserRow {
 }
 
 const pool = new Pool();
-const users = genPostgresPGAPI<UserRow>("users", "app");
+const users = genPostgresPGAPI<UserRow>("users", "app"); // optional third arg: custom format
 const client = await pool.connect();
 
 try {
@@ -229,7 +243,7 @@ interface UserRow {
 }
 
 const db = new Database(":memory:");
-const users = genSQLiteBunAPI<UserRow>("users");
+const users = genSQLiteBunAPI<UserRow>("users"); // optional second arg: custom format
 
 const rows = users.select(db, { cols: ["id", "email"] });
 const exactlyTwo = expect(rows, 2, new Error("Expected 2 users"));
@@ -239,6 +253,10 @@ Both adapters also expose:
 - `sql(...)`: run raw SQL with params
 - `expect(...)`: assert exact row count
 - `expectOne(...)`: assert exactly one row
+
+Adapter notes:
+- `genPostgresPGAPI` accepts `(tableName, schema, format?)`.
+- `genSQLiteBunAPI` accepts `(tableName, format?)` and always generates SQL without schema prefix.
 
 ## Custom format (placeholders + quoting)
 You can provide your own `Format`:
