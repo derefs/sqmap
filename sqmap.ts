@@ -48,6 +48,7 @@ export interface InsertQueryParams<TCol, TRow> {
 }
 
 export interface SelectQueryParams<TCol, TRow> {
+  distinct?: boolean;
   cols:     Array<TCol | "*">;
   where?:   [target: TRow, op?: CompOp, between?: BetweenOp] |
             Array<[col: TCol, op: CompOp, value: any] | BetweenExtOp>;
@@ -196,9 +197,14 @@ function resolveWhereClause<TCol, TRow>(
     const between = WHERE[2] || "AND";
     const predicates: string[] = [];
     for (const [key, value] of Object.entries(target as any)) {
-      predicates.push(pai ? `${qc}${key}${qc} ${op} ${pp}${paramIndex}` : `${qc}${key}${qc} ${op} ${pp}`);
-      paramIndex++;
-      params.push(value);
+      if (value === null && (op === "=" || op === "!=")) {
+        const resolvedNullOp = op === "=" ? "IS NULL" : "IS NOT NULL";
+        predicates.push(`${qc}${key}${qc} ${resolvedNullOp}`);
+      } else {
+        predicates.push(pai ? `${qc}${key}${qc} ${op} ${pp}${paramIndex}` : `${qc}${key}${qc} ${op} ${pp}`);
+        paramIndex++;
+        params.push(value);
+      }
     }
     whereClause = predicates.length === 0 ? null : predicates.join(` ${between} `);
   } else if (Array.isArray(WHERE)) {
@@ -208,9 +214,15 @@ function resolveWhereClause<TCol, TRow>(
       if (Array.isArray(token)) {
         const col = token[0];
         const op = token[1];
-        predicates.push(pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex}` : `${qc}${col}${qc} ${op} ${pp}`);
-        paramIndex++;
-        params.push(token[2]);
+        const value = token[2];
+        if (value === null && (op === "=" || op === "!=")) {
+          const resolvedNullOp = op === "=" ? "IS NULL" : "IS NOT NULL";
+          predicates.push(`${qc}${col}${qc} ${resolvedNullOp}`);
+        } else {
+          predicates.push(pai ? `${qc}${col}${qc} ${op} ${pp}${paramIndex}` : `${qc}${col}${qc} ${op} ${pp}`);
+          paramIndex++;
+          params.push(value);
+        }
       } else {
         if (token !== "AND" && token !== "OR" && token !== "NOT") throw new Error(`Invalid boolean expression token "${token}".`);
         predicates.push(token as BetweenExtOp);
@@ -311,6 +323,7 @@ function resolveShift<TCol, TRow>(
 }
 
 interface ParsedSelectQuery {
+  distinct:    boolean;
   columns:     string;
   whereClause: string | null;
   inOp:        string | null;
@@ -322,6 +335,7 @@ interface ParsedSelectQuery {
 export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow>, format: Format): ParsedSelectQuery {
   const qc = format.quotingChar;
 
+  const distinct = query.distinct === true;
   let columns:     string = "";
   let whereClause: string | null = null;
   let inOp:        string | null = null;
@@ -363,7 +377,7 @@ export function parseSelectQuery<TCol, TRow>(query: SelectQueryParams<TCol, TRow
     paramIndex = shiftResult.paramIndex;
   }
 
-  return { columns, whereClause, inOp, likeOp, order, shift, params };
+  return { distinct, columns, whereClause, inOp, likeOp, order, shift, params };
 }
 
 interface ParsedUpdateQuery {
@@ -481,8 +495,9 @@ export const buildInsertQuery = (schema: string | null, tableName: string, parse
 };
 
 export const buildSelectQuery = (schema: string | null, tableName: string, parsedQuery: ParsedSelectQuery, quotingChar: QuotingChar, between?: BetweenOp): string => {
-  let finalQuery = `SELECT ${parsedQuery.columns} FROM ${quotingChar}${schema}${quotingChar}.${quotingChar}${tableName}${quotingChar}`;
-  if (!schema) finalQuery = `SELECT ${parsedQuery.columns} FROM ${quotingChar}${tableName}${quotingChar}`;
+  const distinct = parsedQuery.distinct ? "DISTINCT " : "";
+  let finalQuery = `SELECT ${distinct}${parsedQuery.columns} FROM ${quotingChar}${schema}${quotingChar}.${quotingChar}${tableName}${quotingChar}`;
+  if (!schema) finalQuery = `SELECT ${distinct}${parsedQuery.columns} FROM ${quotingChar}${tableName}${quotingChar}`;
   between = between || "AND";
   let containsWhere = false;
   if (parsedQuery.whereClause) {

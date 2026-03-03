@@ -42,6 +42,57 @@ function selectCases(fixture: ModelFixture): TestCase[] {
       }
     },
     {
+      name: "select distinct with explicit columns",
+      run: () => {
+        const result = fixture.db.select({
+          distinct: true,
+          cols: ["id", "email"]
+        });
+
+        assertSQL(
+          result,
+          `SELECT DISTINCT ${h.q("id")}, ${h.q("email")} FROM ${h.table(fixture.schema, fixture.table)};`,
+          [],
+          "select distinct with explicit columns"
+        );
+      }
+    },
+    {
+      name: "select distinct with wildcard",
+      run: () => {
+        const result = fixture.db.select({
+          distinct: true,
+          cols: ["*"]
+        });
+
+        assertSQL(
+          result,
+          `SELECT DISTINCT * FROM ${h.table(fixture.schema, fixture.table)};`,
+          [],
+          "select distinct with wildcard"
+        );
+      }
+    },
+    {
+      name: "select distinct with where order and shift",
+      run: () => {
+        const result = fixture.db.select({
+          distinct: true,
+          cols: ["id"],
+          where: [{ id: 10 }],
+          order: { by: "id", type: "DESC" },
+          shift: { limit: 1, offset: 0 }
+        });
+
+        assertSQL(
+          result,
+          `SELECT DISTINCT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE ${h.q("id")} = ${h.p(0)} ORDER BY ${h.q("id")} DESC LIMIT ${h.p(1)} OFFSET ${h.p(2)};`,
+          [10, 1, 0],
+          "select distinct with where order and shift"
+        );
+      }
+    },
+    {
       name: "where object defaults",
       run: () => {
         const result = fixture.db.select({
@@ -74,6 +125,38 @@ function selectCases(fixture: ModelFixture): TestCase[] {
       }
     },
     {
+      name: "where object rewrites null comparisons",
+      run: () => {
+        const result = fixture.db.select({
+          cols: ["id"],
+          where: [{ verified_at: null, id: 7 }] as any
+        });
+
+        assertSQL(
+          result,
+          `SELECT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE ${h.q("verified_at")} IS NULL AND ${h.q("id")} = ${h.p(0)};`,
+          [7],
+          "where object rewrites null comparisons"
+        );
+      }
+    },
+    {
+      name: "where object custom operator rewrites null comparisons",
+      run: () => {
+        const result = fixture.db.select({
+          cols: ["id"],
+          where: [{ verified_at: null, id: 7 }, "!=", "OR"] as any
+        });
+
+        assertSQL(
+          result,
+          `SELECT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE ${h.q("verified_at")} IS NOT NULL OR ${h.q("id")} != ${h.p(0)};`,
+          [7],
+          "where object custom operator rewrites null comparisons"
+        );
+      }
+    },
+    {
       name: "tokenized where with OR",
       run: () => {
         const result = fixture.db.select({
@@ -102,6 +185,38 @@ function selectCases(fixture: ModelFixture): TestCase[] {
           `SELECT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE NOT ${h.q("email")} = ${h.p(0)};`,
           ["admin@example.com"],
           "tokenized where with NOT"
+        );
+      }
+    },
+    {
+      name: "tokenized where rewrites equals null to IS NULL",
+      run: () => {
+        const result = fixture.db.select({
+          cols: ["id"],
+          where: [["verified_at", "=", null], "OR", ["stripe_id", "!=", null]] as any
+        });
+
+        assertSQL(
+          result,
+          `SELECT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE ${h.q("verified_at")} IS NULL OR ${h.q("stripe_id")} IS NOT NULL;`,
+          [],
+          "tokenized where rewrites equals null to IS NULL"
+        );
+      }
+    },
+    {
+      name: "tokenized where null predicates preserve placeholder indexing",
+      run: () => {
+        const result = fixture.db.select({
+          cols: ["id"],
+          where: [["id", "=", 7], "AND", ["verified_at", "=", null], "AND", ["status", "=", Status.Active]] as any
+        });
+
+        assertSQL(
+          result,
+          `SELECT ${h.q("id")} FROM ${h.table(fixture.schema, fixture.table)} WHERE ${h.q("id")} = ${h.p(0)} AND ${h.q("verified_at")} IS NULL AND ${h.q("status")} = ${h.p(1)};`,
+          [7, Status.Active],
+          "tokenized where null predicates preserve placeholder indexing"
         );
       }
     },

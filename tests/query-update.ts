@@ -38,6 +38,38 @@ function updateCases(fixture: ModelFixture): TestCase[] {
       }
     },
     {
+      name: "update tokenized where rewrites null comparisons",
+      run: () => {
+        const result = fixture.db.update({
+          set: { status: Status.Active },
+          where: [["verified_at", "=", null], "OR", ["stripe_id", "!=", null]] as any
+        });
+
+        assertSQL(
+          result,
+          `UPDATE ${h.table(fixture.schema, fixture.table)} SET ${h.q("status")} = ${h.p(0)} WHERE ${h.q("verified_at")} IS NULL OR ${h.q("stripe_id")} IS NOT NULL;`,
+          [Status.Active],
+          "update tokenized where rewrites null comparisons"
+        );
+      }
+    },
+    {
+      name: "update tokenized where null comparison keeps param progression",
+      run: () => {
+        const result = fixture.db.update({
+          set: { status: Status.Banned },
+          where: [["verified_at", "=", null], "AND", ["id", "=", 77]] as any
+        });
+
+        assertSQL(
+          result,
+          `UPDATE ${h.table(fixture.schema, fixture.table)} SET ${h.q("status")} = ${h.p(0)} WHERE ${h.q("verified_at")} IS NULL AND ${h.q("id")} = ${h.p(1)};`,
+          [Status.Banned, 77],
+          "update tokenized where null comparison keeps param progression"
+        );
+      }
+    },
+    {
       name: "update where object custom operator and between",
       run: () => {
         const result = fixture.db.update({
@@ -50,6 +82,22 @@ function updateCases(fixture: ModelFixture): TestCase[] {
           `UPDATE ${h.table(fixture.schema, fixture.table)} SET ${h.q("status")} = ${h.p(0)} WHERE ${h.q("id")} != ${h.p(1)} OR ${h.q("email")} != ${h.p(2)};`,
           [Status.Banned, 10, "blocked@example.com"],
           "update where object custom operator and between"
+        );
+      }
+    },
+    {
+      name: "update where object rewrites null comparisons",
+      run: () => {
+        const result = fixture.db.update({
+          set: { status: Status.Banned },
+          where: [{ verified_at: null, id: 7 }] as any
+        });
+
+        assertSQL(
+          result,
+          `UPDATE ${h.table(fixture.schema, fixture.table)} SET ${h.q("status")} = ${h.p(0)} WHERE ${h.q("verified_at")} IS NULL AND ${h.q("id")} = ${h.p(1)};`,
+          [Status.Banned, 7],
+          "update where object rewrites null comparisons"
         );
       }
     },

@@ -84,6 +84,7 @@ Notes:
 ## Select queries
 ```ts
 const sql = users.select({
+  distinct: true,
   cols: ["id", "email"],
   where: [{ id: 42 }],
   in: [["status", "IN", ["active", "banned"]]],
@@ -96,7 +97,7 @@ const sql = users.select({
 Generated SQL:
 
 ```sql
-SELECT "id", "email" FROM "app"."users" WHERE "id" = $1 AND "status" IN ($2, $3) AND "email" ILIKE $4 ORDER BY "id" DESC LIMIT $5 OFFSET $6;
+SELECT DISTINCT "id", "email" FROM "app"."users" WHERE "id" = $1 AND "status" IN ($2, $3) AND "email" ILIKE $4 ORDER BY "id" DESC LIMIT $5 OFFSET $6;
 ```
 
 ```ts
@@ -105,14 +106,20 @@ SELECT "id", "email" FROM "app"."users" WHERE "id" = $1 AND "status" IN ($2, $3)
 
 Capabilities:
 - `cols` supports explicit columns and `"*"`.
+- `distinct`: emits `SELECT DISTINCT ...` when enabled.
 - `where` supports:
   - Object form: `[{ id: 1, email: "x@x.com" }, "!=", "OR"]`
+  - Object null rewrite: `[{ verified_at: null, id: 7 }]` becomes `"verified_at" IS NULL AND "id" = $1`
   - Tokenized form: `[["id", "=", 1], "OR", "NOT", ["email", "=", "x@x.com"]]`
+  - Tokenized null rewrite: `[["verified_at", "=", null], "OR", ["stripe_id", "!=", null]]` becomes `IS NULL` / `IS NOT NULL`
 - `in`: `IN` and `NOT IN`
 - `like`: `LIKE`, `NOT LIKE`, `ILIKE`, `NOT ILIKE`
 - `between`: controls how `where`, `in`, and `like` groups are joined (`AND` default, or `OR`)
 - `order`: `ASC` or `DESC`
 - `shift`: `LIMIT` / `OFFSET` (`null` and negative values are ignored)
+
+Note:
+- Null rewrite applies to both object and tokenized `where` predicates for `=` and `!=`.
 
 ## Update queries
 ```ts
